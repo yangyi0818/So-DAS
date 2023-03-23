@@ -30,6 +30,12 @@
 
 ## Train
 
+**```./run.sh --id 0,1,2,3```**
+
+**Step 1: Optimize the DOA estimator and the separator individually.**
+
+**Step 2: Cascade the two modules as a whole system and train it with only separation loss.**
+
 ## Results
 
 ![image](https://github.com/yangyi0818/So-DAS/blob/main/figures/table1.png)
