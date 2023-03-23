@@ -20,6 +20,20 @@
 
 ![image](https://github.com/yangyi0818/So-DAS/blob/main/figures/framework.png)
 
+## Dataset
+**We use [sms_wsj][sms_wsj] to generate room impulse responses (RIRs) set. ```sms_wsj/reverb/scenario.py``` and ```sms_wsj/database/create_rirs.py``` should be replaced by scripts in 'sms_wsj_replace' folder.**
+
+**use ```python generate_rir.py``` to generate training and valadation data**
+
+## Requirement
+**Our script use [asteroid][asteroid] toolkit as the basic environment.**
+
+## Train
+
+## Results
+
+![image](https://github.com/yangyi0818/So-DAS/blob/main/figures/table1.png)
+![image](https://github.com/yangyi0818/So-DAS/blob/main/figures/table2.png)
 
 [Paper]: https://ieeexplore.ieee.org/abstract/document/10052748
 [sms_wsj]: https://github.com/fgnt/sms_wsj
