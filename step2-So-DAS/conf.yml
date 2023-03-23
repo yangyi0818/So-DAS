@@ -1,0 +1,17 @@
+# Training config
+training:
+  epochs: 50
+  batch_size: 8
+  num_workers: 4
+  half_lr: yes
+  early_stop: yes
+# Optim config
+optim:
+  optimizer: adam
+  lr: 0.001
+  weight_decay: 0.
+# Data config
+data:
+  train_dir: 
+  valid_dir: 
+  sample_rate: 16000
