@@ -35,6 +35,43 @@
 ![image](https://github.com/yangyi0818/So-DAS/blob/main/figures/table1.png)
 ![image](https://github.com/yangyi0818/So-DAS/blob/main/figures/table2.png)
 
+## Citation
+**Cite our paper by:** 
+
+**@ARTICLE{10052748,**
+
+  **author={Yang, Yi and Hu, Qi and Zhao, Qingwei and Zhang, Pengyuan},**
+  
+  **journal={IEEE Signal Processing Letters},**
+  
+  **title={So-DAS: A Two-Step Soft-Direction-Aware Speech Separation Framework},**
+  
+  **year={2023},**
+  
+  **volume={},**
+  
+  **number={},**
+  
+  **pages={1-5},**
+  
+  **doi={10.1109/LSP.2023.3248952}**
+  
+**}**
+
+## References
+
+**[24] F. Dang, H. Chen, and P. Zhang, “DPT-FSNet: Dual-path transformer based full-band and sub-band fusion network for speech enhancement,” in Proc. IEEE Int. Conf. Acoust., Speech Signal Process., 2022, pp. 6857-6861.**
+
+**[26] Z. Chen, T. Yoshioka, L. Lu, T. Zhou, Z. Meng, Y. Luo, J. Wu, X. Xiao, and J. Li, “Continuous speech separation: Dataset and analysis,” in Proc. IEEE Int. Conf. Acoust., Speech Signal Process., 2020, pp. 7284-7288.**
+
+**[32] Z.-Q. Wang, P. Wang, and D. Wang, “Multi-microphone complex spectral mapping for utterance-wise and continuous speech separation,” IEEE/ACM Trans. Audio, Speech, Lang. Process., vol. 29, pp. 2001- 2014, 2021.**
+
+**[40] S. Chen, Y. Wu, Z. Chen, J. Wu, J. Li, T. Yoshioka, C. Wang, S. Liu, and M. Zhou, “Continuous speech separation with conformer,” in Proc. IEEE Int. Conf. Acoust., Speech Signal Process., 2021, pp. 5749-5753.**
+
+**[41] K. Saijo and R. Scheibler, “Spatial loss for unsupervised multi-channel source separation,” in Proc. Interspeech, 2022, pp. 241-245.**
+
+**Please feel free to contact us if you have any questions.**
+  
 [Paper]: https://ieeexplore.ieee.org/abstract/document/10052748
 [sms_wsj]: https://github.com/fgnt/sms_wsj
 [asteroid]: https://github.com/asteroid-team/asteroid
