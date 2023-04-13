@@ -1,7 +1,7 @@
 # So-DAS
 **So-DAS: A Two-Step Soft-Direction-Aware Speech Separation Framework**
 
-**This work has been accepted by *IEEE Signal Processing Letters (SPL).*  Early access available [here][Paper].**
+**This work has been published on *IEEE Signal Processing Letters (SPL).*  The paper is available [here][Paper].**
 
 ## Contents 
 * **[So-DAS-A-Two-Step-Soft-Direction-Aware-Speech-Separation-Framework](#so-das-a-two-step-soft-direction-aware-speech-separation-framework)**
