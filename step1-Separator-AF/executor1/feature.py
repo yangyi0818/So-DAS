@@ -1,5 +1,4 @@
-# This code use for reference https://github.com/Sanyuan-Chen/CSS_with_Conformer/blob/master/executor/feature.py
-# Function: Implementation of front-end feature via PyTorch
+#!/user/bin/env python
 
 import torch
 import torch as th
@@ -10,39 +9,38 @@ import math
 from collections.abc import Sequence
 MATH_PI = math.pi
 
+# https://github.com/Sanyuan-Chen/CSS_with_Conformer/blob/b221bcd111e832a15f954cc2081e9affc9bdf3ae/executor/feature.py#L394
 class FeatureExtractor(nn.Module):
-    """
-    A PyTorch module to handle spectral & spatial features
-    """
-    def __init__(self,
-                 frame_len=512,
-                 frame_hop=128,
-                 normalize=True,
-                 round_pow_of_two=True,
-                 window="sqrt_hann",
-                 log_spectrogram=True,
-                 mvn_spectrogram=True,
-                 ipd_mean_normalize=True,
-                 ipd_mean_normalize_version=2,
-                 ipd_cos=True,
-                 ipd_sin=False,
-                 ipd_index="1,0;2,0;3,0;4,0;5,0;6,0",
-                 ang_index="1,0;2,0;3,0;4,0;5,0;6,0",
-                 do_ipd=False,
-                 ):
+    def __init__(self, frame_len=512, frame_hop=128, normalize=True, round_pow_of_two=True, num_spks=2, window="sqrt_hann", log_spectrogram=True, mvn_spectrogram=True, \
+                       ipd_mean_normalize=True, ipd_mean_normalize_version=2, ipd_cos=True, ipd_sin=True, \
+                       ipd_index="1,0;2,0;3,0;4,0;5,0;6,0", ang_index="1,0;2,0;3,0;4,0;5,0;6,0", do_ipd=False, do_doa=False):
+
         super(FeatureExtractor, self).__init__()
-        # forward STFT
         self.forward_stft = STFT(frame_len, frame_hop, normalize=normalize, window=window, round_pow_of_two=round_pow_of_two)
         self.inverse_stft = iSTFT(frame_len, frame_hop, normalize=normalize, round_pow_of_two=round_pow_of_two)
-        # BN or not
+        self.has_spatial = False
+        num_bins = self.forward_stft.num_bins
+        self.feature_dim = num_bins
+        self.num_bins = num_bins
+        self.num_spks = num_spks
         self.mvn_mag = mvn_spectrogram
-        # apply log or not
         self.log_mag = log_spectrogram
 
         # IPD or not
         self.do_ipd = do_ipd
-        self.ipd_extractor = IPDFeature(ipd_index, cos=ipd_cos, sin=ipd_sin, ipd_mean_normalize_version=ipd_mean_normalize_version, ipd_mean_normalize=ipd_mean_normalize)
-        self.ang_extractor = AngleFeature(num_bins=257, num_doas=1, af_index=ang_index)
+        self.ipd_extractor = None
+        if do_ipd:
+            self.ipd_extractor = IPDFeature(ipd_index, cos=ipd_cos, sin=ipd_sin, ipd_mean_normalize_version=ipd_mean_normalize_version, ipd_mean_normalize=ipd_mean_normalize)
+            self.feature_dim += self.ipd_extractor.num_pairs * num_bins
+            self.has_spatial = True
+
+        # AF or not
+        self.do_doa = do_doa
+        self.ang_extractor = None
+        if do_doa:
+            self.ang_extractor = AngleFeature(num_bins=num_bins, num_doas=1, af_index=ang_index) # must known the DoA
+            self.feature_dim += num_bins * self.num_spks
+            self.has_spatial = True
 
     def stft(self, x, cplx=False):
         return self.forward_stft(x, cplx=cplx)
@@ -52,15 +50,13 @@ class FeatureExtractor(nn.Module):
 
     def compute_spectra(self, x):
         """
-        Compute spectra features
-        args
-            x: b x c x n (multi-channel) or b x 1 x n (single channel)
-        return:
-            mag & pha: b x f x t or b x c x f x t
-            feature: b x * x t
+        Function: Compute spectra features
+        Input:  x:         [b c n]   (multi-channel) or [b 1 n] (single channel)
+        Output: mag & pha: [b c f t] (multi-channel) or [b f t] (single channel)
+                feature:   [b * t]
         """
         mag, pha = self.forward_stft(x)
-        # ch0: N x F x T
+        # ch0: b x f x t
         if mag.dim() == 4:
             f = th.clamp(mag[:, 0], min=1e-8)
         else:
@@ -72,45 +68,54 @@ class FeatureExtractor(nn.Module):
         if self.mvn_mag:
             f = (f - f.mean(-1, keepdim=True)) / (f.std(-1, keepdim=True) + 1e-8)
 
-        if mag.dim() == 4:
-            f = f.reshape(mag.size()[0], -1, mag.size()[-1])
-
         return mag, pha, f
 
 
-    def compute_spatial(self, pha, doa=None):
+    def compute_spatial(self, x, doa=None, pha=None):
         """
-        Compute spatial features
-        args
-            pha: b x c x f x t
-        return
-            feature: b x * x t
+        Function: Compute spatial features
+        Input:  pha:     [b c f t]
+        Output: feature: [b * t]
         """
-        ipd = self.ipd_extractor(pha)
-        if (doa.size() != torch.Size([])):
-            doa = self.ang_extractor(pha,doa)
-            return torch.cat((ipd, doa), 1)
+        if pha is None:
+             _, pha = self.forward_stft(x) # [b c f t]
         else:
-            return ipd
+            if pha.dim() != 4:
+                raise RuntimeError("Expect phase matrix a 4D tensor, " + f"got {pha.dim()} instead")
+
+        feature = []
+        if self.has_spatial:
+            if self.do_ipd:
+                ipd = self.ipd_extractor(pha)
+                #print('ipd:', ipd.shape)
+                feature.append(ipd) # [b mf t]
+            if self.do_doa:
+                ang = self.ang_extractor(pha, doa)
+                #print('ang:', ang.shape)
+                feature.append(ang) # [b sf t]
+
+        feature = th.cat(feature, 1)
+        return feature
+
 
     def forward(self, x, doa=None):
         """
-        args
-            x: b x c x n (multi-channel) or b x 1 x n (single channel)
-        return:
-            mag & pha: b x f x t (if ref_channel is not None), b x c x f x t
-            feature: b x * x t
+        Input:  x:         [b c n]   (multi-channel) or [b 1 n] (single channel)
+        Output: mag & pha: [b c f t] (multi-channel) or [b f t] (single channel)
+                feature:   [b * t]
         """
         mag, pha, f = self.compute_spectra(x)
         feature = [f]
-        if (self.do_ipd):
-            spatial = self.compute_spatial(pha=pha, doa=doa)
+        if self.has_spatial:
+            spatial = self.compute_spatial(x, pha=pha, doa=doa)
             feature.append(spatial)
         # b x * x t
         feature = th.cat(feature, 1)
 
         return mag, pha, feature
 
+
+# https://github.com/Sanyuan-Chen/CSS_with_Conformer/blob/b221bcd111e832a15f954cc2081e9affc9bdf3ae/executor/feature.py#L19
 def init_kernel(frame_len,
                 frame_hop,
                 normalize=True,
@@ -136,6 +141,7 @@ def init_kernel(frame_len,
     # N+2 x 1 x F
     K = th.reshape(K, (N + 2, 1, frame_len))
     return K
+
 
 class STFTBase(nn.Module):
     """
@@ -170,6 +176,7 @@ class STFTBase(nn.Module):
         return (f"window={self.window}, stride={self.stride}, " +
                 f"kernel_size={self.K.shape[0]}x{self.K.shape[2]}, " +
                 f"normalize={self.normalize}")
+
 
 class STFT(STFTBase):
     """
@@ -260,20 +267,12 @@ class iSTFT(STFTBase):
         return s
 
 
+# https://github.com/Sanyuan-Chen/CSS_with_EETransformer/blob/master/executor/feature.py#L170
 class IPDFeature(nn.Module):
-    """
-    Compute inter-channel phase difference
-    """
-    def __init__(self,
-                 ipd_index="1,0;2,0;3,0;4,0;5,0;6,0",
-                 cos=True,
-                 sin=False,
-                 ipd_mean_normalize_version=2,
-                 ipd_mean_normalize=True):
+    def __init__(self, ipd_index="1,0;2,0;3,0;4,0;5,0;6,0", cos=True, sin=False, ipd_mean_normalize_version=2, ipd_mean_normalize=True):
+
         super(IPDFeature, self).__init__()
-        split_index = lambda sstr: [
-            tuple(map(int, p.split(","))) for p in sstr.split(";")
-        ]
+        split_index = lambda sstr: [tuple(map(int, p.split(","))) for p in sstr.split(";")]
         # ipd index
         pair = split_index(ipd_index)
         self.index_l = [t[0] for t in pair]
@@ -290,11 +289,9 @@ class IPDFeature(nn.Module):
 
     def forward(self, p):
         """
-        Accept multi-channel phase and output inter-channel phase difference
-        args
-            p: phase matrix, N x C x F x T
-        return
-            ipd: N x MF x T
+        Function: Accept multi-channel phase and output inter-channel phase difference
+        Input:  phase matrix [b c f t]
+        Output: ipd          [b mf t]
         """
         if p.dim() not in [3, 4]:
             raise RuntimeError(
@@ -323,7 +320,7 @@ class IPDFeature(nn.Module):
                 raise RuntimeError(
                     "{} expect ipd_mean_normalization version 1 or version 2, but got {:d} instead".format(
                         self.__name__, self.ipd_mean_normalize_version))
-        
+
         if self.cos:
             # N x M x F x T
             ipd = th.cos(pha_dif)
@@ -342,6 +339,7 @@ class IPDFeature(nn.Module):
         return ipd
 
 
+# https://github.com/Sanyuan-Chen/CSS_with_Conformer/blob/master/executor/feature.py#L252
 class AngleFeature(nn.Module):
     """
     Compute angle/directional feature
@@ -349,32 +347,23 @@ class AngleFeature(nn.Module):
         2) num_doas != 1: we do not have that prior, so we sampled #num_doas DoAs 
                           and compute on each directions    
     """
-    def __init__(self,
-                 geometric="princeton",
-                 sr=16000,
-                 velocity=340,
-                 num_bins=257,
-                 num_doas=1,
-                 af_index="1,0;2,0;3,0;4,0;5,0;6,0"):
+    def __init__(self, geometric="princeton", sr=16000, velocity=340, num_bins=257, num_doas=1, af_index="1,0;2,0;3,0;4,0;5,0;6,0"):
+
         super(AngleFeature, self).__init__()
         if geometric not in ["princeton"]:
-            raise RuntimeError(
-                "Unsupported array geometric: {}".format(geometric))
+            raise RuntimeError("Unsupported array geometric: {}".format(geometric))
         self.geometric = geometric
         self.sr = sr
         self.num_bins = num_bins
         self.num_doas = num_doas
         self.velocity = velocity
-        split_index = lambda sstr: [
-            tuple(map(int, p.split(","))) for p in sstr.split(";")
-        ]
+        split_index = lambda sstr: [tuple(map(int, p.split(","))) for p in sstr.split(";")]
         # ipd index
         pair = split_index(af_index)
         self.index_l = [t[0] for t in pair]
         self.index_r = [t[1] for t in pair]
         self.af_index = af_index
-        omega = th.tensor(
-            [math.pi * sr * f / (num_bins - 1) for f in range(num_bins)])
+        omega = th.tensor([math.pi * sr * f / (num_bins - 1) for f in range(num_bins)])
         # 1 x F
         self.omega = nn.Parameter(omega[None, :], requires_grad=False)
 
@@ -426,13 +415,9 @@ class AngleFeature(nn.Module):
 
     def _compute_af(self, ipd, doa):
         """
-        Compute angle feature
-        args
-            ipd: N x C x F x T
-            doa: DoA of the target speaker (if we known that), N 
-                 or N x D (we do not known that, sampling D DoAs instead)
-        return
-            af: N x F x T or N x D x F x T
+        Function: Compute angle feature
+        Input:  ipd: [b c f t]  doa: DoA of the target speaker (if we known that), b or [b d] (we do not known that, sampling D DoAs instead)
+        Output: af:  [b f t] or [b d f t]
         """
         # N x C x F or N x D x C x F
         d = self._oracle_phase_delay(doa)
@@ -441,7 +426,7 @@ class AngleFeature(nn.Module):
             dif = d[:, self.index_l] - d[:, self.index_r]
             # N x C x F x T
             af = th.cos(ipd - dif)
-            # on channel dimention (mean or sum)
+            # mean or sum
             af = th.mean(af, dim=1)
         else:
             # N x D x C x F x 1
@@ -454,31 +439,23 @@ class AngleFeature(nn.Module):
 
     def forward(self, p, doa):
         """
-        Accept doa of the speaker & multi-channel phase, output angle feature
-        args
-            doa: DoA of target/each speaker, N or [N, ...]
-            p: phase matrix, N x C x F x T
-        return
-            af: angle feature, N x F* x T or N x D x F x T (known_doa=False)
+        Function: Accept doa of the speaker & multi-channel phase, output angle feature
+        Input:  doa: DoA of target/each speaker, b or [b, ...] p: phase matrix [b c f t]
+        Output: af: angle feature, [b f* t] or [b d f t] (known_doa=False)
         """
         if p.dim() not in [3, 4]:
-            raise RuntimeError(
-                "{} expect 3/4D tensor, but got {:d} instead".format(
-                    self.__name__, p.dim()))
-        # C x F x T => 1 x C x F x T
+            raise RuntimeError("{} expect 3/4D tensor, but got {:d} instead".format(self.__name__, p.dim()))
         if p.dim() == 3:
             p = p.unsqueeze(0)
         ipd = p[:, self.index_l] - p[:, self.index_r]
 
         if isinstance(doa, Sequence):
             if self.num_doas != 1:
-                raise RuntimeError("known_doa=False, no need to pass "
-                                   "doa as a Sequence object")
-            # [N x F x T or N x D x F x T, ...]
+                raise RuntimeError("known_doa=False, no need to pass doa as a Sequence object")
             af = [self._compute_af(ipd, spk_doa) for spk_doa in doa]
-            # N x F x T => N x F* x T
+            # [b f* t]
             af = th.cat(af, 1)
         else:
-            # N x F x T or N x D x F x T
             af = self._compute_af(ipd, doa)
         return af
+    
